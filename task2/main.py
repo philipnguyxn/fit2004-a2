@@ -1,7 +1,7 @@
 from typing import List, Optional, Annotated
 
 
-def allocate(preferences: List[List[int]], officers_per_org: List[List[int]]) -> Optional[
+def allocate(preferences: List[List[int]], officers_per_org: List[List[int]], min_shifts: int, max_shifts: int) -> Optional[
     Annotated[List[List[List[int]]], 'allocation']]:
     return None
 
