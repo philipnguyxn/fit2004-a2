@@ -1,77 +1,160 @@
+from collections import deque
 from typing import List, Optional, Annotated
 
 
-def allocate(preferences: List[List[int]], officers_per_org: List[List[int]], min_shifts: int, max_shifts: int) -> Optional[
-    Annotated[List[List[List[int]]], 'allocation']]:
-    return None
+def allocate(
+        preferences: List[List[int]],
+        officers_per_org: List[List[int]],
+        min_shifts: int,
+        max_shifts: int,
+) -> Optional[Annotated[List[List[List[int]]], "allocation"]]:
+    if min_shifts > max_shifts:
+        return None
+
+    graph = Graph(preferences, officers_per_org, max_shifts, min_shifts)
+    graph.edmonds_karp()
+
+
+class Edge:
+    def __init__(self, from_node: int, to_node: int, capacity: int, residual_edge=None):
+        self.from_node = from_node
+        self.to_node = to_node
+        self.flow = 0
+        self.capacity = capacity
+        self.residual_edge: Optional[Edge] = residual_edge
 
 
 class Graph:
-    def __init__(self, preferences: List[List[int]], officers_per_org: List[List[int]]):
-        self.adj_matrix: List[List[int]] = []
+    DAYS_IN_A_MONTH = 30
+    SHIFTS_IN_A_DAY = 3
 
-    def _add_edge(self):
-        return None
+    def __init__(
+            self,
+            preferences: List[List[int]],
+            officers_per_org: List[List[int]],
+            max_shifts: int,
+            min_shifts: int,
+    ):
+        self.days = [day for day in range(0, self.DAYS_IN_A_MONTH)]
 
-    def _bfs(self, s: int, t: int, parent: List[int]):
+        self.no_officers = len(preferences)
+        self.no_companies = len(officers_per_org)
+
+        # Define the indices of source, officer's supernode, and sink in the graph
+        self.source = self.no_officers + self.SHIFTS_IN_A_DAY + self.DAYS_IN_A_MONTH * self.no_companies + 1
+        self.officers_supernode = self.source + 1
+        self.sink = self.source + 2
+
+        # Initialize adjacency list
+        self.adjacency_list: List[List[Edge]] = [[] for _ in range(self.sink + 1)]
+
+        # Define shift indices in the graph
+        shift_indices = [self.no_officers + shift for shift in range(self.SHIFTS_IN_A_DAY)]
+
+        # Add edge between the source and officer supernode with the capacity is
+        # the total of minimum shifts for all officers
+        self._add_edge(self.source, self.officers_supernode, self.no_officers * min_shifts)
+
+        for i in range(self.no_officers):
+            officer = preferences[i]
+
+            # Add edge between the officer supernode and each officer with the capacity is
+            # the maximum number of shifts each officer can work per month
+            self._add_edge(self.officers_supernode, i, max_shifts)
+
+            for j in range(self.SHIFTS_IN_A_DAY):
+                choice = officer[j]
+
+                if choice:
+                    shift_index = shift_indices[j]
+
+                    # Add edges between officers and shifts with the capacity is the number of days in a month
+                    # if the officer prefer the shift
+                    self._add_edge(i, shift_index, self.DAYS_IN_A_MONTH)
+
+        companies_per_day_indices = [shift_indices[-1] + 1 + i for i in
+                                     range(self.DAYS_IN_A_MONTH * self.no_companies)]
+
+        for i, company in enumerate(officers_per_org):
+            for day in self.days:
+                company_per_day_index = companies_per_day_indices[self.DAYS_IN_A_MONTH * i + day]
+
+                # Add edge between each pair of day and company and sink with the capacity is
+                # the total number of officers requested by that company for the whole day
+                self._add_edge(company_per_day_index, self.sink, sum(company))
+
+                for j, officer in enumerate(company):
+                    shift_index = shift_indices[j]
+
+                    # Add edge between each shift and pair of day and company with the capacity is the number
+                    # of officers requested by each company per shift
+                    self._add_edge(shift_index, company_per_day_index, officer)
+
+    def _add_edge(self, from_node: int, to_node: int, capacity: int):
+        augmented_edge = Edge(from_node, to_node, capacity)
+        residual_edge = Edge(to_node, from_node, capacity, augmented_edge)
+        augmented_edge.residual_edge = residual_edge
+
+        self.adjacency_list[from_node].append(augmented_edge)
+        self.adjacency_list[to_node].append(residual_edge)
+
+    def _bfs(self, from_node: int, to_node: int, parent: List[Edge]):
         # Initial setup
-        queue = []
-        visited = []
+        queue = deque([from_node])
+        visited = [False] * (self.sink + 1)
 
-        queue.append(s)
-        visited[s] = True
+        queue.append(from_node)
+        visited[from_node] = True
 
         # Serve the front until the queue is empty
         while queue:
-            u = queue.pop(0)
+            current = queue.popleft()
 
             # Visit all adjacent vertices if they are not visited
-            for v, flow in enumerate(self.adj_matrix[u]):
-                if not visited[v] and flow > 0:
-                    queue.append(v)
-                    visited[v] = True
-                    parent[v] = u
+            for edge in self.adjacency_list[current]:
+                residual = edge.capacity - edge.flow
 
-        return visited[t]
+                if not visited[edge.to_node] and residual > 0:
+                    queue.append(edge.to_node)
+                    visited[edge.to_node] = True
+                    parent[edge.to_node] = edge
 
-    def _edmonds_karp(self, source: int, sink: int):
+                    if edge.to_node == to_node:
+                        return True
+
+        return False
+
+    def edmonds_karp(self) -> int:
         # Initial setup
-        parent = [-1]
+        parent: List[Optional[Edge]] = [None] * (self.sink + 1)
         max_flow = 0
 
         # Increase flows if there are augmented paths
-        while self._bfs(source, sink, parent):
-            path_flow = float('inf')
-            s = sink
+        while self._bfs(self.source, self.sink, parent):
+            path_flow = float("inf")
+            to_node = self.sink
 
             # Find the bottleneck along the augmented path
-            while s != source:
-                path_flow = min(path_flow, self.adj_matrix[parent[s]][s])
-                s = parent[s]
+            while to_node != self.source:
+                edge = parent[to_node]
+                path_flow = min(path_flow, edge.capacity - edge.flow)
+                to_node = edge.from_node
+
+            to_node = self.sink
+
+            # Decrease the augmented and residual flows along
+            # the augmented path
+            while to_node != self.source:
+                edge = parent[to_node]
+
+                # Increase the augmented flow
+                edge.flow += path_flow
+
+                # Decrease the residual flow
+                edge.residual_edge.flow -= path_flow
+
+                to_node = edge.from_node
 
             max_flow += path_flow
-            v = sink
 
-            # Decrease the augmented and residual flows along the augmented path
-            while v != source:
-                u = parent[v]
-
-                # Decrease the augmented flow
-                self.adj_matrix[u][v] -= path_flow
-
-                # Increase the residual flow
-                self.adj_matrix[u][v] += path_flow
-
-                v = parent[v]
-
-            # For debugging
-            path = []
-            v = sink
-
-            while v != source:
-                path.append(v)
-                v = parent[v]
-
-            path.append(source)
-            path.reverse()
-            print(path, path_flow)
+        return max_flow

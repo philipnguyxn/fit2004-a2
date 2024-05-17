@@ -66,7 +66,8 @@ def test_6():
 
     assert result is not None
 
-def test_6():
+
+def test_7():
     preferences = [[1, 0, 0], [1, 0, 0]]
     officers_per_org = [[1, 0, 0]]
     max_shifts = 15
@@ -76,7 +77,8 @@ def test_6():
 
     assert result is not None
 
-def test_6():
+
+def test_8():
     preferences = [[1, 0, 0], [1, 0, 0]]
     officers_per_org = [[1, 0, 0]]
     max_shifts = 15
