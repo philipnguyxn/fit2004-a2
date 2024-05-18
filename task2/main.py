@@ -11,8 +11,14 @@ def allocate(
     if min_shifts > max_shifts:
         return None
 
-    graph = Graph(preferences, officers_per_org, max_shifts, min_shifts)
+    graph = Graph(preferences, officers_per_org, min_shifts, max_shifts)
     graph.edmonds_karp()
+
+    for edge in graph.adjacency_list[graph.sink]:
+        if edge.residual_edge.flow != edge.residual_edge.capacity:
+            return None
+
+    return []
 
 
 class Edge:
@@ -32,16 +38,14 @@ class Graph:
             self,
             preferences: List[List[int]],
             officers_per_org: List[List[int]],
-            max_shifts: int,
             min_shifts: int,
+            max_shifts: int,
     ):
-        self.days = [day for day in range(0, self.DAYS_IN_A_MONTH)]
-
         self.no_officers = len(preferences)
         self.no_companies = len(officers_per_org)
 
         # Define the indices of source, officer's supernode, and sink in the graph
-        self.source = self.no_officers + self.SHIFTS_IN_A_DAY + self.DAYS_IN_A_MONTH * self.no_companies + 1
+        self.source = self.no_officers + self.SHIFTS_IN_A_DAY + self.no_companies
         self.officers_supernode = self.source + 1
         self.sink = self.source + 2
 
@@ -62,33 +66,32 @@ class Graph:
             # the maximum number of shifts each officer can work per month
             self._add_edge(self.officers_supernode, i, max_shifts)
 
-            for j in range(self.SHIFTS_IN_A_DAY):
-                choice = officer[j]
+            for shift in range(self.SHIFTS_IN_A_DAY):
+                choice = officer[shift]
 
                 if choice:
-                    shift_index = shift_indices[j]
+                    shift_index = shift_indices[shift]
 
                     # Add edges between officers and shifts with the capacity is the number of days in a month
                     # if the officer prefer the shift
                     self._add_edge(i, shift_index, self.DAYS_IN_A_MONTH)
 
-        companies_per_day_indices = [shift_indices[-1] + 1 + i for i in
-                                     range(self.DAYS_IN_A_MONTH * self.no_companies)]
+        companies_indices = [shift_indices[-1] + 1 + i for i in
+                             range(self.no_companies)]
 
         for i, company in enumerate(officers_per_org):
-            for day in self.days:
-                company_per_day_index = companies_per_day_indices[self.DAYS_IN_A_MONTH * i + day]
+            company_index = companies_indices[i]
 
-                # Add edge between each pair of day and company and sink with the capacity is
-                # the total number of officers requested by that company for the whole day
-                self._add_edge(company_per_day_index, self.sink, sum(company))
+            # Add edge between each pair of day and company and sink with the capacity is
+            # the total number of officers requested by that company for the whole day
+            self._add_edge(company_index, self.sink, sum(company) * self.DAYS_IN_A_MONTH)
 
-                for j, officer in enumerate(company):
-                    shift_index = shift_indices[j]
+            for j, officer in enumerate(company):
+                shift_index = shift_indices[j]
 
-                    # Add edge between each shift and pair of day and company with the capacity is the number
-                    # of officers requested by each company per shift
-                    self._add_edge(shift_index, company_per_day_index, officer)
+                # Add edge between each shift and pair of day and company with the capacity is the number
+                # of officers requested by each company per shift
+                self._add_edge(shift_index, company_index, officer * self.DAYS_IN_A_MONTH)
 
     def _add_edge(self, from_node: int, to_node: int, capacity: int):
         augmented_edge = Edge(from_node, to_node, capacity)
